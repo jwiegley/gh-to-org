@@ -179,10 +179,12 @@ class TestOrgMerger:
 
         headings, result = merger.merge([issue], [])
 
-        content = headings[0].content
-        assert "First comment" in content
-        assert "Second comment" in content
-        assert "@commenter" in content
+        # Comments should be in children, not content
+        children = headings[0].children
+        assert len(children) == 2
+        assert "First comment" in children[0].content
+        assert "Second comment" in children[1].content
+        assert "@commenter" in children[0].title
 
     def test_merge_result_statistics(
         self,
@@ -213,3 +215,167 @@ class TestOrgMerger:
         assert result.added == 1  # new_issue
         assert result.updated == 1  # github_issue
         assert result.preserved == 1  # user_heading
+
+    def test_merge_preserves_custom_ordering(self, merger: OrgMerger) -> None:
+        """Test that user's custom ordering of existing headings is preserved."""
+        # Create GitHub issues in sorted order: 5, 10, 15
+        issue_5 = GitHubIssue(
+            number=5,
+            title="Issue 5",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 5),
+            updated_at=datetime(2024, 1, 6),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/5",
+        )
+        issue_10 = GitHubIssue(
+            number=10,
+            title="Issue 10",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 10),
+            updated_at=datetime(2024, 1, 11),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/10",
+        )
+        issue_15 = GitHubIssue(
+            number=15,
+            title="Issue 15",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 15),
+            updated_at=datetime(2024, 1, 16),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/15",
+        )
+        issue_20 = GitHubIssue(
+            number=20,
+            title="Issue 20",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 20),
+            updated_at=datetime(2024, 1, 21),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/20",
+        )
+
+        # Create existing headings in CUSTOM order: 15, 5, user, 10
+        # This simulates user reordering their org file
+        heading_15 = OrgHeading(
+            level=1,
+            title="Issue 15",
+            properties={
+                "GITHUB_NUMBER": "15",
+                "GITHUB_UPDATED": "2024-01-15T10:00:00",
+            },
+        )
+        heading_5 = OrgHeading(
+            level=1,
+            title="Issue 5",
+            properties={
+                "GITHUB_NUMBER": "5",
+                "GITHUB_UPDATED": "2024-01-05T10:00:00",
+            },
+        )
+        user_heading = OrgHeading(
+            level=1,
+            title="My Custom Task",
+            content="User created content",
+        )
+        heading_10 = OrgHeading(
+            level=1,
+            title="Issue 10",
+            properties={
+                "GITHUB_NUMBER": "10",
+                "GITHUB_UPDATED": "2024-01-10T10:00:00",
+            },
+        )
+
+        # Merge with GitHub issues
+        headings, result = merger.merge(
+            [issue_5, issue_10, issue_15, issue_20],
+            [heading_15, heading_5, user_heading, heading_10],
+        )
+
+        # Verify order is preserved: 15, 5, user, 10, NEW (20)
+        assert len(headings) == 5
+        assert headings[0].github_number == 15
+        assert headings[0].title == "Issue 15"
+        assert headings[1].github_number == 5
+        assert headings[1].title == "Issue 5"
+        assert headings[2].github_number is None
+        assert headings[2].title == "My Custom Task"
+        assert headings[3].github_number == 10
+        assert headings[3].title == "Issue 10"
+        assert headings[4].github_number == 20
+        assert headings[4].title == "Issue 20"
+
+        # Verify statistics
+        assert result.added == 1  # issue 20 is new
+        assert result.updated == 3  # issues 5, 10, 15 updated
+        assert result.preserved == 1  # user heading
+
+    def test_merge_new_issues_appended_sorted(self, merger: OrgMerger) -> None:
+        """Test that new issues are appended at the end in sorted order."""
+        # Existing heading with issue 10
+        existing = OrgHeading(
+            level=1,
+            title="Issue 10",
+            properties={
+                "GITHUB_NUMBER": "10",
+                "GITHUB_UPDATED": "2024-01-10T10:00:00",
+            },
+        )
+
+        # GitHub has issues 10 (existing), 25, 15, 5 (all new, unsorted)
+        issue_10 = GitHubIssue(
+            number=10,
+            title="Issue 10 Updated",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 10),
+            updated_at=datetime(2024, 1, 11),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/10",
+        )
+        issue_25 = GitHubIssue(
+            number=25,
+            title="Issue 25",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 25),
+            updated_at=datetime(2024, 1, 26),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/25",
+        )
+        issue_15 = GitHubIssue(
+            number=15,
+            title="Issue 15",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 15),
+            updated_at=datetime(2024, 1, 16),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/15",
+        )
+        issue_5 = GitHubIssue(
+            number=5,
+            title="Issue 5",
+            state=IssueState.OPEN,
+            created_at=datetime(2024, 1, 5),
+            updated_at=datetime(2024, 1, 6),
+            author=User(login="author"),
+            url="https://github.com/owner/repo/issues/5",
+        )
+
+        # Merge
+        headings, result = merger.merge(
+            [issue_10, issue_25, issue_15, issue_5],
+            [existing],
+        )
+
+        # Verify order: existing (10) first, then new issues sorted (5, 15, 25)
+        assert len(headings) == 4
+        assert headings[0].github_number == 10
+        assert headings[0].title == "Issue 10 Updated"
+        assert headings[1].github_number == 5
+        assert headings[2].github_number == 15
+        assert headings[3].github_number == 25
+
+        # Verify statistics
+        assert result.added == 3
+        assert result.updated == 1

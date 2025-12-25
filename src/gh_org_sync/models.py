@@ -53,7 +53,7 @@ class Comment(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    id: int
+    id: int | str  # GitHub returns GraphQL node IDs as strings
     author: User
     body: str
     created_at: datetime
@@ -124,6 +124,7 @@ class OrgHeading(BaseModel):
 
     # Source tracking for merge operations
     source_line: int | None = None  # Line number in original file
+    raw_text: str | None = None  # Original raw text from file (for unchanged entries)
 
     @property
     def github_number(self) -> int | None:
@@ -139,11 +140,24 @@ class OrgHeading(BaseModel):
     @property
     def github_updated(self) -> datetime | None:
         """Get GitHub updated timestamp from properties if present."""
+        import re
         updated_str = self.properties.get("GITHUB_UPDATED")
         if updated_str:
             try:
+                # Try ISO format first (e.g., "2024-11-01T16:12:00Z")
                 return datetime.fromisoformat(updated_str.replace("Z", "+00:00"))
             except ValueError:
+                # Try Org-mode format: [2024-11-01 Fri 16:12]
+                match = re.match(
+                    r"[\[<](\d{4}-\d{2}-\d{2})\s+\w+\s+(\d{2}:\d{2})[\]>]",
+                    updated_str
+                )
+                if match:
+                    date_part, time_part = match.groups()
+                    try:
+                        return datetime.fromisoformat(f"{date_part}T{time_part}:00+00:00")
+                    except ValueError:
+                        return None
                 return None
         return None
 

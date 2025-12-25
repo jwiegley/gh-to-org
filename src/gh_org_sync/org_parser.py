@@ -201,6 +201,11 @@ class OrgParser:
         # Join content, stripping trailing empty lines
         heading.content = "\n".join(content_lines).rstrip()
 
+        # Store raw text (from heading line to end of entry, excluding children)
+        end_index = start_index + consumed
+        raw_lines = lines[start_index:end_index]
+        heading.raw_text = "\n".join(raw_lines)
+
         return heading, consumed
 
     def _parse_properties_drawer(

@@ -18,21 +18,143 @@ from .models import GitHubIssue, OrgHeading
 logger = logging.getLogger(__name__)
 
 
-def escape_org_content(text: str) -> str:
+def normalize_line_endings(text: str) -> str:
     """
-    Escape text for safe inclusion in Org-mode content.
+    Normalize line endings to Unix-style (LF only).
 
-    Handles lines starting with special characters that would be
-    interpreted as Org-mode syntax.
+    Converts Windows (CRLF) and old Mac (CR) line endings to Unix (LF).
 
     Args:
-        text: Raw text to escape
+        text: Text with potentially mixed line endings
 
     Returns:
-        Escaped text safe for Org-mode
+        Text with only LF line endings
+    """
+    # First convert CRLF to LF, then standalone CR to LF
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def markdown_to_org(text: str) -> str:
+    """
+    Convert Markdown markup to Org-mode equivalents.
+
+    Handles common Markdown patterns:
+    - [text](url) → [[url][text]]
+    - **bold** → *bold*
+    - *italic* → /italic/
+    - _italic_ → /italic/
+    - `code` → =code=
+    - ~~strikethrough~~ → +strikethrough+
+    - ```code blocks``` → #+BEGIN_SRC / #+END_SRC
+
+    Args:
+        text: Text with Markdown markup
+
+    Returns:
+        Text with Org-mode markup
     """
     if not text:
         return ""
+
+    # Normalize line endings first
+    text = normalize_line_endings(text)
+
+    # Convert fenced code blocks (```lang ... ```) to Org source blocks
+    # Must be done before other conversions to avoid mangling code content
+    def convert_code_block(match: re.Match[str]) -> str:
+        lang = match.group(1) or ""
+        code = match.group(2)
+        if lang:
+            return f"#+BEGIN_SRC {lang}\n{code}#+END_SRC"
+        return f"#+BEGIN_SRC\n{code}#+END_SRC"
+
+    text = re.sub(
+        r"```(\w*)\n(.*?)```",
+        convert_code_block,
+        text,
+        flags=re.DOTALL,
+    )
+
+    # Convert Markdown links [text](url) to Org links [[url][text]]
+    # Be careful not to match already-escaped brackets
+    text = re.sub(
+        r"(?<!\[)\[([^\]]+)\]\(([^)]+)\)",
+        r"[[\2][\1]]",
+        text,
+    )
+
+    # Convert inline code `code` to Org verbatim =code=
+    # Use non-greedy match and avoid matching code that spans lines
+    text = re.sub(r"`([^`\n]+)`", r"=\1=", text)
+
+    # Convert bold **text** to Org *text*
+    text = re.sub(r"\*\*([^*]+)\*\*", r"*\1*", text)
+
+    # Convert bold __text__ to Org *text*
+    text = re.sub(r"__([^_]+)__", r"*\1*", text)
+
+    # Convert italic *text* to Org /text/ (single asterisks not already bold)
+    # This is tricky - we need to avoid matching list items
+    # Only convert if preceded by whitespace or start of line
+    text = re.sub(r"(?<=\s)\*([^*\n]+)\*(?=\s|$|[.,;:!?])", r"/\1/", text)
+
+    # Convert italic _text_ to Org /text/
+    # Only match word-bounded underscores
+    text = re.sub(r"(?<=\s)_([^_\n]+)_(?=\s|$|[.,;:!?])", r"/\1/", text)
+
+    # Convert strikethrough ~~text~~ to Org +text+
+    text = re.sub(r"~~([^~]+)~~", r"+\1+", text)
+
+    # Convert blockquotes > text to Org-mode style
+    # Multi-line blockquotes become #+BEGIN_QUOTE blocks
+    lines = text.split("\n")
+    result_lines: list[str] = []
+    in_blockquote = False
+
+    for line in lines:
+        if line.startswith("> "):
+            if not in_blockquote:
+                result_lines.append("#+BEGIN_QUOTE")
+                in_blockquote = True
+            result_lines.append(line[2:])  # Remove "> " prefix
+        elif line.startswith(">"):
+            if not in_blockquote:
+                result_lines.append("#+BEGIN_QUOTE")
+                in_blockquote = True
+            result_lines.append(line[1:])  # Remove ">" prefix
+        else:
+            if in_blockquote:
+                result_lines.append("#+END_QUOTE")
+                in_blockquote = False
+            result_lines.append(line)
+
+    if in_blockquote:
+        result_lines.append("#+END_QUOTE")
+
+    return "\n".join(result_lines)
+
+
+def escape_org_content(text: str) -> str:
+    """
+    Convert Markdown to Org-mode and escape special line-start patterns.
+
+    This function:
+    1. Normalizes line endings (removes ^M / CR characters)
+    2. Converts Markdown markup to Org-mode equivalents
+    3. Escapes lines starting with special characters that would be
+       interpreted as Org-mode syntax
+
+    Args:
+        text: Raw text (possibly with Markdown) to process
+
+    Returns:
+        Text with Org-mode markup, safe for inclusion in Org content
+    """
+    if not text:
+        return ""
+
+    # First convert Markdown to Org-mode (also normalizes line endings)
+    text = markdown_to_org(text)
 
     lines = text.split("\n")
     escaped_lines: list[str] = []
@@ -47,7 +169,13 @@ def escape_org_content(text: str) -> str:
         needs_escape = False
 
         # Check for special line-start patterns
-        if stripped.startswith(("*", "#")):
+        # Escape asterisks that aren't part of Org bold markup
+        if stripped.startswith("*") and not re.match(r"^\*[^*\s].*[^*\s]\*", stripped):
+            # Looks like a heading marker, not bold text
+            if not stripped.startswith("*") or len(stripped) == 1 or stripped[1] == " ":
+                needs_escape = True
+        # Escape hash that could look like Org keywords
+        elif stripped.startswith("#") and not stripped.startswith("#+"):
             needs_escape = True
         elif stripped.startswith(":") and ":" in stripped[1:]:
             # Check if it looks like a property :NAME:
@@ -60,10 +188,6 @@ def escape_org_content(text: str) -> str:
 
         if needs_escape:
             line = indent + ", " + stripped
-
-        # Escape Org-mode link brackets
-        line = line.replace("[[", r"\[\[")
-        line = line.replace("]]", r"\]\]")
 
         escaped_lines.append(line)
 
@@ -145,9 +269,9 @@ def format_properties(
 
     max_len = max(len(str(k)) for k in valid_props)
 
-    for key, value in valid_props.items():
-        # Format value based on type
-        value_str = value.isoformat() if isinstance(value, datetime) else str(value)
+    for key, value in sorted(valid_props.items()):
+        # Format value based on type (use Org-mode timestamp for datetime)
+        value_str = format_timestamp(value) if isinstance(value, datetime) else str(value)
 
         key_upper = str(key).upper()
         padding = " " * (max_len - len(key_upper) + 1)
@@ -258,13 +382,11 @@ class OrgWriter:
 
         # Body
         if issue.body:
-            lines.append("")
             escaped_body = escape_org_content(issue.body.strip())
             lines.append(escaped_body)
 
         # Comments as sub-headings
         if issue.comments:
-            lines.append("")
             comment_stars = "*" * (level + 1)
 
             for comment in sorted(issue.comments, key=lambda c: c.created_at):
@@ -274,11 +396,6 @@ class OrgWriter:
                 if comment.body:
                     escaped_comment = escape_org_content(comment.body.strip())
                     lines.append(escaped_comment)
-                lines.append("")
-
-        # Add sync marker
-        lines.append("")
-        lines.append(self.SYNC_MARKER)
 
         return "\n".join(lines)
 
@@ -294,31 +411,36 @@ class OrgWriter:
         """
         lines: list[str] = []
 
-        # Heading line
-        stars = "*" * heading.level
-        parts = [stars]
+        # If raw_text is available, use it directly (preserves original formatting)
+        if heading.raw_text is not None:
+            lines.append(heading.raw_text)
+        else:
+            # Otherwise, generate from scratch
+            # Heading line
+            stars = "*" * heading.level
+            parts = [stars]
 
-        if heading.todo_state:
-            parts.append(heading.todo_state.value)
+            if heading.todo_state:
+                parts.append(heading.todo_state.value)
 
-        parts.append(heading.title)
+            parts.append(heading.title)
 
-        if heading.tags:
-            parts.append(":" + ":".join(heading.tags) + ":")
+            if heading.tags:
+                parts.append(":" + ":".join(heading.tags) + ":")
 
-        lines.append(" ".join(parts))
+            lines.append(" ".join(parts))
 
-        # Properties drawer
-        if heading.properties:
-            props_text = format_properties(heading.properties)
-            if props_text:
-                lines.append(props_text)
+            # Properties drawer
+            if heading.properties:
+                props_text = format_properties(heading.properties)
+                if props_text:
+                    lines.append(props_text)
 
-        # Content
-        if heading.content:
-            lines.append(heading.content)
+            # Content
+            if heading.content:
+                lines.append(heading.content)
 
-        # Children
+        # Children (always appended regardless of raw_text)
         for child in heading.children:
             lines.append("")
             lines.append(self.format_heading(child))
@@ -366,7 +488,6 @@ class OrgWriter:
 
         for heading in headings:
             content_parts.append(self.format_heading(heading))
-            content_parts.append("")  # Blank line between top-level headings
 
         content = "\n".join(content_parts)
 
@@ -424,7 +545,6 @@ class OrgWriter:
         # Issues
         for issue in sorted(issues, key=lambda i: i.number):
             content_parts.append(self.format_issue_heading(issue))
-            content_parts.append("")
 
         content = "\n".join(content_parts)
         content = content.rstrip() + "\n"

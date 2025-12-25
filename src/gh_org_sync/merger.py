@@ -27,6 +27,29 @@ from .org_writer import (
 logger = logging.getLogger(__name__)
 
 
+def _normalize_for_comparison(text: str) -> str:
+    """
+    Normalize text for comparison to ignore whitespace-only differences.
+
+    - Normalizes line endings (CRLF/CR -> LF)
+    - Strips trailing whitespace from each line
+    - Collapses multiple spaces on heading lines (for tag alignment)
+    - Removes leading/trailing blank lines
+    """
+    # Normalize line endings
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    # Process each line
+    normalized_lines: list[str] = []
+    for line in text.split("\n"):
+        line = line.rstrip()
+        # Collapse multiple spaces on heading lines (tag alignment normalization)
+        if line.startswith("*"):
+            line = re.sub(r"  +", " ", line)
+        normalized_lines.append(line)
+    # Join and strip leading/trailing blank lines
+    return "\n".join(normalized_lines).strip()
+
+
 class OrgMerger:
     """
     Merges GitHub issues with existing Org-mode content.
@@ -63,6 +86,13 @@ class OrgMerger:
         """
         Merge GitHub issues with existing Org headings.
 
+        Preserves the order of existing headings. For each existing heading:
+        - If it has a GITHUB_NUMBER and a matching issue exists, merge in place
+        - If it has no GITHUB_NUMBER (user-created), preserve as-is
+        - If it has a GITHUB_NUMBER but no matching issue, preserve as-is
+
+        New issues (not in existing file) are appended at the end.
+
         Args:
             github_issues: List of issues from GitHub
             existing_headings: List of headings from Org file
@@ -75,59 +105,60 @@ class OrgMerger:
             total_org_headings=len(existing_headings),
         )
 
-        # Build index of existing headings by GitHub number
-        heading_index: dict[int, OrgHeading] = {}
-        for heading in existing_headings:
-            gh_num = heading.github_number
-            if gh_num is not None:
-                heading_index[gh_num] = heading
+        # Build index of GitHub issues by number for efficient lookup
+        issue_index: dict[int, GitHubIssue] = {
+            issue.number: issue for issue in github_issues
+        }
 
-        # Track which existing headings have been processed
-        processed_numbers: set[int] = set()
+        # Track which GitHub issues have been processed
+        processed_issue_numbers: set[int] = set()
 
-        # Process each GitHub issue
+        # Process existing headings in order, merging with GitHub data where applicable
         merged_headings: list[OrgHeading] = []
 
-        for issue in sorted(github_issues, key=lambda i: i.number):
-            existing = heading_index.get(issue.number)
+        for heading in existing_headings:
+            gh_num = heading.github_number
 
-            if existing:
-                # Update existing heading
-                updated, action = self._merge_heading(issue, existing)
+            if gh_num is None:
+                # User-created heading with no GitHub link - preserve as-is
+                merged_headings.append(heading)
+                result.preserved += 1
+            elif gh_num in issue_index:
+                # Existing heading with matching GitHub issue - merge in place
+                issue = issue_index[gh_num]
+                updated, action = self._merge_heading(issue, heading)
                 merged_headings.append(updated)
-                processed_numbers.add(issue.number)
+                processed_issue_numbers.add(gh_num)
                 result.add_entry(
                     issue_number=issue.number,
                     title=issue.title,
                     action=action,
                     details=(
-                        self._describe_changes(issue, existing)
+                        self._describe_changes(issue, heading)
                         if action == MergeAction.UPDATED
                         else None
                     ),
                 )
             else:
-                # Create new heading
-                new_heading = self._issue_to_heading(issue)
-                merged_headings.append(new_heading)
-                result.add_entry(
-                    issue_number=issue.number,
-                    title=issue.title,
-                    action=MergeAction.ADDED,
-                )
+                # Existing heading with GITHUB_NUMBER but no matching issue
+                # (might be closed/deleted issue) - preserve as-is
+                merged_headings.append(heading)
+                result.preserved += 1
 
-        # Preserve user headings that aren't linked to GitHub
-        for heading in existing_headings:
-            gh_num = heading.github_number
-            if gh_num is None:
-                # User-created heading, preserve it
-                merged_headings.append(heading)
-                result.preserved += 1
-            elif gh_num not in processed_numbers:
-                # GitHub issue exists in Org but wasn't in the fetch
-                # This might be a closed issue filtered out, preserve it
-                merged_headings.append(heading)
-                result.preserved += 1
+        # Append new issues that weren't in the existing file
+        # Sort new issues by number for consistent ordering of additions
+        new_issues = [
+            issue for issue in github_issues
+            if issue.number not in processed_issue_numbers
+        ]
+        for issue in sorted(new_issues, key=lambda i: i.number):
+            new_heading = self._issue_to_heading(issue)
+            merged_headings.append(new_heading)
+            result.add_entry(
+                issue_number=issue.number,
+                title=issue.title,
+                action=MergeAction.ADDED,
+            )
 
         return merged_headings, result
 
@@ -153,6 +184,7 @@ class OrgMerger:
             return existing, MergeAction.UNCHANGED
 
         # Create new heading with GitHub data
+        # Note: raw_text is not set (defaults to None) since heading is modified
         merged = OrgHeading(
             level=existing.level,
             title=issue.title,
@@ -160,9 +192,17 @@ class OrgMerger:
             tags=self._merge_tags(issue, existing),
             properties=self._merge_properties(issue, existing),
             content=self._merge_content(issue, existing),
-            children=existing.children,  # Preserve child headings
+            children=self._merge_children(issue, existing),
             source_line=existing.source_line,
+            raw_text=None,  # Clear raw_text since heading has been modified
         )
+
+        # Compare normalized rendered output to detect whitespace-only changes
+        existing_text = _normalize_for_comparison(self.writer.format_heading(existing))
+        merged_text = _normalize_for_comparison(self.writer.format_heading(merged))
+
+        if existing_text == merged_text:
+            return existing, MergeAction.UNCHANGED
 
         return merged, MergeAction.UPDATED
 
@@ -174,7 +214,10 @@ class OrgMerger:
             return True
 
         # If GitHub issue is newer, update is needed
-        if issue.updated_at > existing_updated:
+        # Compare at minute precision since Org format doesn't store seconds
+        github_minute = issue.updated_at.replace(second=0, microsecond=0)
+        existing_minute = existing_updated.replace(second=0, microsecond=0)
+        if github_minute > existing_minute:
             return True
 
         # Also check for state changes
@@ -233,8 +276,8 @@ class OrgMerger:
         properties["GITHUB_NUMBER"] = str(issue.number)
         properties["URL"] = str(issue.url)
         properties["GITHUB_STATE"] = issue.state.value
-        properties["GITHUB_UPDATED"] = issue.updated_at.isoformat()
-        properties["CREATED"] = issue.created_at.isoformat()
+        properties["GITHUB_UPDATED"] = format_timestamp(issue.updated_at)
+        properties["CREATED"] = format_timestamp(issue.created_at)
         properties["AUTHOR"] = issue.author.login
 
         if issue.assignee_logins:
@@ -242,7 +285,7 @@ class OrgMerger:
         if issue.milestone:
             properties["MILESTONE"] = issue.milestone.title
         if issue.closed_at:
-            properties["CLOSED"] = issue.closed_at.isoformat()
+            properties["CLOSED"] = format_timestamp(issue.closed_at)
 
         return properties
 
@@ -254,30 +297,14 @@ class OrgMerger:
         """
         Merge content from GitHub and existing heading.
 
-        GitHub body and comments are updated, user additions preserved.
+        GitHub body is updated, user additions preserved.
+        Comments are handled separately via children, not in content.
         """
         parts: list[str] = []
 
-        # GitHub body
+        # GitHub body only - comments are handled as children
         if issue.body:
             parts.append(escape_org_content(issue.body.strip()))
-
-        # Comments as formatted text (not sub-headings in content)
-        if issue.comments:
-            parts.append("")
-            comment_level = existing.level + 1
-            comment_stars = "*" * comment_level
-
-            for comment in sorted(issue.comments, key=lambda c: c.created_at):
-                timestamp = format_timestamp(comment.created_at)
-                parts.append(f"{comment_stars} Comment by @{comment.author.login} {timestamp}")
-                if comment.body:
-                    parts.append(escape_org_content(comment.body.strip()))
-                parts.append("")
-
-        # Add sync marker
-        parts.append("")
-        parts.append(self.SYNC_MARKER)
 
         # Extract and preserve user additions (content after sync marker)
         user_content = self._extract_user_content(existing.content)
@@ -285,7 +312,7 @@ class OrgMerger:
             parts.append("")
             parts.append(user_content)
 
-        return "\n".join(parts)
+        return "\n".join(parts).rstrip()
 
     def _extract_user_content(self, content: str) -> str:
         """Extract user-added content after the sync marker."""
@@ -300,6 +327,39 @@ class OrgMerger:
             return parts[1].strip()
 
         return ""
+
+    def _merge_children(
+        self,
+        issue: GitHubIssue,
+        existing: OrgHeading,
+    ) -> list[OrgHeading]:
+        """
+        Merge children from GitHub comments and existing heading.
+
+        GitHub comments become children, user-added children are preserved.
+        """
+        children: list[OrgHeading] = []
+
+        # Build comment children from GitHub
+        if issue.comments:
+            for comment in sorted(issue.comments, key=lambda c: c.created_at):
+                timestamp = format_timestamp(comment.created_at)
+                author = comment.author.login
+                comment_content = ""
+                if comment.body:
+                    comment_content = escape_org_content(comment.body.strip())
+                children.append(OrgHeading(
+                    level=existing.level + 1,
+                    title=f"Comment by @{author} {timestamp}",
+                    content=comment_content,
+                ))
+
+        # Preserve user-added children (not comments)
+        for child in existing.children:
+            if not child.title.startswith("Comment by @"):
+                children.append(child)
+
+        return children
 
     def _issue_to_heading(self, issue: GitHubIssue, level: int = 1) -> OrgHeading:
         """Convert a GitHub issue to a new OrgHeading."""
@@ -317,8 +377,8 @@ class OrgMerger:
             "GITHUB_NUMBER": str(issue.number),
             "URL": str(issue.url),
             "GITHUB_STATE": issue.state.value,
-            "GITHUB_UPDATED": issue.updated_at.isoformat(),
-            "CREATED": issue.created_at.isoformat(),
+            "GITHUB_UPDATED": format_timestamp(issue.updated_at),
+            "CREATED": format_timestamp(issue.created_at),
             "AUTHOR": issue.author.login,
         }
 
@@ -327,28 +387,27 @@ class OrgMerger:
         if issue.milestone:
             properties["MILESTONE"] = issue.milestone.title
         if issue.closed_at:
-            properties["CLOSED"] = issue.closed_at.isoformat()
+            properties["CLOSED"] = format_timestamp(issue.closed_at)
 
-        # Build content
-        content_parts: list[str] = []
-
+        # Build content (body only - comments are children)
+        content = ""
         if issue.body:
-            content_parts.append(escape_org_content(issue.body.strip()))
+            content = escape_org_content(issue.body.strip())
 
+        # Build comment children
+        children: list[OrgHeading] = []
         if issue.comments:
-            content_parts.append("")
-            comment_stars = "*" * (level + 1)
-
             for comment in sorted(issue.comments, key=lambda c: c.created_at):
                 timestamp = format_timestamp(comment.created_at)
                 author = comment.author.login
-                content_parts.append(f"{comment_stars} Comment by @{author} {timestamp}")
+                comment_content = ""
                 if comment.body:
-                    content_parts.append(escape_org_content(comment.body.strip()))
-                content_parts.append("")
-
-        content_parts.append("")
-        content_parts.append(self.SYNC_MARKER)
+                    comment_content = escape_org_content(comment.body.strip())
+                children.append(OrgHeading(
+                    level=level + 1,
+                    title=f"Comment by @{author} {timestamp}",
+                    content=comment_content,
+                ))
 
         return OrgHeading(
             level=level,
@@ -356,8 +415,8 @@ class OrgMerger:
             todo_state=OrgTodoState.DONE if issue.state.value == "closed" else OrgTodoState.TODO,
             tags=tags,
             properties=properties,
-            content="\n".join(content_parts),
-            children=[],
+            content=content,
+            children=children,
         )
 
     def _describe_changes(self, issue: GitHubIssue, existing: OrgHeading) -> str:
