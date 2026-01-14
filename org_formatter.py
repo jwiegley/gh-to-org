@@ -45,7 +45,7 @@ class OrgFormatter:
             >>> OrgFormatter.format_timestamp(dt, active=True)
             '<2024-01-15 Mon 10:30>'
         """
-        bracket = ('<', '>') if active else ('[', ']')
+        bracket = ("<", ">") if active else ("[", "]")
         return f"{bracket[0]}{dt.strftime('%Y-%m-%d %a %H:%M')}{bracket[1]}"
 
     @staticmethod
@@ -75,7 +75,7 @@ class OrgFormatter:
         if not text:
             return ""
 
-        lines = text.split('\n')
+        lines = text.split("\n")
         escaped_lines = []
 
         for line in lines:
@@ -86,44 +86,46 @@ class OrgFormatter:
                 escaped_lines.append(line)
                 continue
 
-            indent = line[:len(line) - len(stripped)]
+            indent = line[: len(line) - len(stripped)]
 
             # Check for special line-start characters
             needs_escape = False
 
-            if stripped.startswith('*'):
+            if stripped.startswith("*"):
                 needs_escape = True
-            elif stripped.startswith('#'):
+            elif stripped.startswith("#"):
                 needs_escape = True
-            elif stripped.startswith('#+'):
+            elif stripped.startswith("#+"):
                 needs_escape = True
-            elif stripped.startswith(':'):
+            elif stripped.startswith(":"):
                 # Check if it looks like a property or drawer
                 # Format: :WORD: or :WORD:WORD:
-                if ':' in stripped[1:]:
-                    colon_pos = stripped.index(':', 1)
+                if ":" in stripped[1:]:
+                    colon_pos = stripped.index(":", 1)
                     potential_keyword = stripped[1:colon_pos]
                     # If it's alphanumeric/underscore, it's likely a property
-                    if potential_keyword and re.match(r'^[A-Za-z_][A-Za-z0-9_-]*$', potential_keyword):
+                    if potential_keyword and re.match(
+                        r"^[A-Za-z_][A-Za-z0-9_-]*$", potential_keyword
+                    ):
                         needs_escape = True
 
             if needs_escape:
-                line = indent + ', ' + stripped
+                line = indent + ", " + stripped
 
             # Escape Org-mode link brackets
             # Replace [[ with \[\[ and ]] with \]\]
             # Note: We need to escape both opening and closing pairs
-            line = line.replace('[[', r'\[\[')
-            line = line.replace(']]', r'\]\]')
+            line = line.replace("[[", r"\[\[")
+            line = line.replace("]]", r"\]\]")
             # Also handle cases where ] and [ appear separately within link syntax
             # Count brackets to ensure we're escaping correctly
-            if r'\[\[' in line or r'\]\]' in line:
+            if r"\[\[" in line or r"\]\]" in line:
                 # Already escaped, ensure middle content is preserved
                 pass
 
             escaped_lines.append(line)
 
-        return '\n'.join(escaped_lines)
+        return "\n".join(escaped_lines)
 
     @staticmethod
     def format_tags(tags: List[str], include_link: bool = True) -> str:
@@ -149,23 +151,23 @@ class OrgFormatter:
         all_tags = []
 
         if include_link:
-            all_tags.append('LINK')
+            all_tags.append("LINK")
 
         # Clean tags: replace spaces and special chars with underscores
         for tag in tags:
             if not tag:
                 continue
             # Replace spaces, colons, and other problematic characters
-            clean_tag = re.sub(r'[:\s]+', '_', tag.strip())
+            clean_tag = re.sub(r"[:\s]+", "_", tag.strip())
             # Remove leading/trailing underscores
-            clean_tag = clean_tag.strip('_')
+            clean_tag = clean_tag.strip("_")
             if clean_tag:
                 all_tags.append(clean_tag)
 
         if not all_tags:
             return ""
 
-        return ':' + ':'.join(all_tags) + ':'
+        return ":" + ":".join(all_tags) + ":"
 
     @staticmethod
     def format_properties(properties: Dict[str, Any], indent: str = "  ") -> str:
@@ -210,14 +212,14 @@ class OrgFormatter:
             # Format with alignment
             # Only add padding space if there's a value
             if value_str:
-                padding = ' ' * (max_len - len(key_upper) + 1)
+                padding = " " * (max_len - len(key_upper) + 1)
                 lines.append(f"{indent}:{key_upper}:{padding}{value_str}")
             else:
                 lines.append(f"{indent}:{key_upper}:")
 
         lines.append(f"{indent}:END:")
 
-        return '\n'.join(lines)
+        return "\n".join(lines)
 
     def format_issue(
         self,
@@ -234,7 +236,7 @@ class OrgFormatter:
         milestone: str = "",
         body: str = "",
         comments: Optional[List[Dict[str, Any]]] = None,
-        level: int = 1
+        level: int = 1,
     ) -> str:
         """
         Format a GitHub issue as complete Org-mode entry.
@@ -263,33 +265,33 @@ class OrgFormatter:
         comments = comments or []
 
         # Determine TODO state
-        todo_state = "DONE" if state == 'closed' else "TODO"
+        todo_state = "DONE" if state == "closed" else "TODO"
 
         # Format heading with tags
-        stars = '*' * level
+        stars = "*" * level
         tag_string = self.format_tags(labels, include_link=self.add_link_tag)
         heading = f"{stars} {todo_state} {title} {tag_string}\n"
 
         # Build properties drawer
         properties = {
-            'URL': url,
-            'ID': number,
-            'STATE': state,
-            'CREATED': created_at,
-            'UPDATED': updated_at,
-            'CLOSED': closed_at,
-            'AUTHOR': author,
-            'ASSIGNEE': assignee,
-            'LABELS': ', '.join(labels),
-            'MILESTONE': milestone,
-            'COMMENTS': len(comments),
+            "URL": url,
+            "ID": number,
+            "STATE": state,
+            "CREATED": created_at,
+            "UPDATED": updated_at,
+            "CLOSED": closed_at,
+            "AUTHOR": author,
+            "ASSIGNEE": assignee,
+            "LABELS": ", ".join(labels),
+            "MILESTONE": milestone,
+            "COMMENTS": len(comments),
         }
 
         properties_text = self.format_properties(properties)
 
         # Add CLOSED timestamp for done items (Org-mode convention)
         closed_line = ""
-        if state == 'closed' and closed_at:
+        if state == "closed" and closed_at:
             indent = "  "
             closed_line = f"{indent}CLOSED: {self.format_timestamp(closed_at)}\n"
 
@@ -303,11 +305,11 @@ class OrgFormatter:
         comments_text = ""
         if comments:
             comment_level = level + 1
-            comment_stars = '*' * comment_level
+            comment_stars = "*" * comment_level
             for comment in comments:
-                comment_author = comment.get('author', 'unknown')
-                comment_created = comment.get('created_at')
-                comment_body = comment.get('body', '')
+                comment_author = comment.get("author", "unknown")
+                comment_created = comment.get("created_at")
+                comment_body = comment.get("body", "")
 
                 timestamp_str = ""
                 if isinstance(comment_created, datetime):
@@ -318,7 +320,7 @@ class OrgFormatter:
                     escaped_comment = self.escape_content(comment_body)
                     comments_text += f"{escaped_comment}\n"
 
-        return heading + properties_text + '\n' + closed_line + body_text + comments_text
+        return heading + properties_text + "\n" + closed_line + body_text + comments_text
 
     def format_issue_from_dict(self, issue: Dict[str, Any], level: int = 1) -> str:
         """
@@ -343,28 +345,25 @@ class OrgFormatter:
             >>> print(formatter.format_issue_from_dict(issue))
         """
         return self.format_issue(
-            title=issue.get('title', 'Untitled'),
-            number=issue.get('number', 0),
-            state=issue.get('state', 'open'),
-            url=issue.get('url', ''),
-            created_at=issue.get('created_at'),
-            updated_at=issue.get('updated_at'),
-            closed_at=issue.get('closed_at'),
-            author=issue.get('author', ''),
-            assignee=issue.get('assignee', ''),
-            labels=issue.get('labels', []),
-            milestone=issue.get('milestone', ''),
-            body=issue.get('body', ''),
-            comments=issue.get('comments', []),
-            level=level
+            title=issue.get("title", "Untitled"),
+            number=issue.get("number", 0),
+            state=issue.get("state", "open"),
+            url=issue.get("url", ""),
+            created_at=issue.get("created_at"),
+            updated_at=issue.get("updated_at"),
+            closed_at=issue.get("closed_at"),
+            author=issue.get("author", ""),
+            assignee=issue.get("assignee", ""),
+            labels=issue.get("labels", []),
+            milestone=issue.get("milestone", ""),
+            body=issue.get("body", ""),
+            comments=issue.get("comments", []),
+            level=level,
         )
 
 
 def format_org_file_header(
-    title: str,
-    description: str = "",
-    author: str = "",
-    startup_options: Optional[List[str]] = None
+    title: str, description: str = "", author: str = "", startup_options: Optional[List[str]] = None
 ) -> str:
     """
     Format Org-mode file header with metadata.
@@ -385,7 +384,7 @@ def format_org_file_header(
         #+STARTUP: overview
         <BLANKLINE>
     """
-    startup_options = startup_options or ['overview']
+    startup_options = startup_options or ["overview"]
 
     lines = []
     lines.append(f"#+TITLE: {title}")
@@ -399,7 +398,7 @@ def format_org_file_header(
     lines.append(f"#+STARTUP: {' '.join(startup_options)}")
     lines.append("")  # Blank line after header
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 # Example usage and testing
@@ -409,82 +408,78 @@ if __name__ == "__main__":
 
     # Example issue
     example_issue = {
-        'title': 'Fix authentication bug on mobile devices',
-        'number': 123,
-        'state': 'open',
-        'url': 'https://github.com/myorg/myrepo/issues/123',
-        'created_at': datetime(2024, 1, 15, 10, 30),
-        'updated_at': datetime(2024, 1, 16, 14, 20),
-        'closed_at': None,
-        'author': 'johndoe',
-        'assignee': 'janedeveloper',
-        'labels': ['bug', 'mobile', 'authentication', 'priority: high'],
-        'milestone': 'v2.0',
-        'body': '''Users are reporting authentication failures on mobile app.
+        "title": "Fix authentication bug on mobile devices",
+        "number": 123,
+        "state": "open",
+        "url": "https://github.com/myorg/myrepo/issues/123",
+        "created_at": datetime(2024, 1, 15, 10, 30),
+        "updated_at": datetime(2024, 1, 16, 14, 20),
+        "closed_at": None,
+        "author": "johndoe",
+        "assignee": "janedeveloper",
+        "labels": ["bug", "mobile", "authentication", "priority: high"],
+        "milestone": "v2.0",
+        "body": """Users are reporting authentication failures on mobile app.
 
 Steps to reproduce:
 * Open mobile app
 * Enter credentials
 * Tap "Login"
 
-Expected: User should be logged in successfully.''',
-        'comments': [
+Expected: User should be logged in successfully.""",
+        "comments": [
             {
-                'author': 'johndoe',
-                'created_at': datetime(2024, 1, 15, 10, 30),
-                'body': 'Initial report from user feedback.'
+                "author": "johndoe",
+                "created_at": datetime(2024, 1, 15, 10, 30),
+                "body": "Initial report from user feedback.",
             },
             {
-                'author': 'janedeveloper',
-                'created_at': datetime(2024, 1, 15, 16, 45),
-                'body': '''Investigating. Appears to be related to OAuth token refresh.
+                "author": "janedeveloper",
+                "created_at": datetime(2024, 1, 15, 16, 45),
+                "body": """Investigating. Appears to be related to OAuth token refresh.
 
 * Found issue in token_manager.py line 234
 
-Code snippet shows the problem.'''
-            }
-        ]
+Code snippet shows the problem.""",
+            },
+        ],
     }
 
     # Generate file
-    print(format_org_file_header(
-        "GitHub Issues",
-        "Synced from myorg/myrepo",
-        "GitHub Issues Bot"
-    ))
+    print(format_org_file_header("GitHub Issues", "Synced from myorg/myrepo", "GitHub Issues Bot"))
 
     print(formatter.format_issue_from_dict(example_issue))
     print()
 
     # Example closed issue
     closed_issue = {
-        'title': 'Add dark mode support',
-        'number': 124,
-        'state': 'closed',
-        'url': 'https://github.com/myorg/myrepo/issues/124',
-        'created_at': datetime(2024, 1, 10, 9, 0),
-        'updated_at': datetime(2024, 1, 14, 18, 30),
-        'closed_at': datetime(2024, 1, 14, 18, 30),
-        'author': 'designuser',
-        'assignee': 'frontenddev',
-        'labels': ['enhancement', 'ui'],
-        'milestone': 'v2.0',
-        'body': 'Add dark mode theme option to settings.',
-        'comments': [
+        "title": "Add dark mode support",
+        "number": 124,
+        "state": "closed",
+        "url": "https://github.com/myorg/myrepo/issues/124",
+        "created_at": datetime(2024, 1, 10, 9, 0),
+        "updated_at": datetime(2024, 1, 14, 18, 30),
+        "closed_at": datetime(2024, 1, 14, 18, 30),
+        "author": "designuser",
+        "assignee": "frontenddev",
+        "labels": ["enhancement", "ui"],
+        "milestone": "v2.0",
+        "body": "Add dark mode theme option to settings.",
+        "comments": [
             {
-                'author': 'frontenddev',
-                'created_at': datetime(2024, 1, 10, 11, 0),
-                'body': 'Working on this. Will use CSS custom properties.'
+                "author": "frontenddev",
+                "created_at": datetime(2024, 1, 10, 11, 0),
+                "body": "Working on this. Will use CSS custom properties.",
             },
             {
-                'author': 'designuser',
-                'created_at': datetime(2024, 1, 11, 10, 0),
-                'body': '''Here are the color values:
+                "author": "designuser",
+                "created_at": datetime(2024, 1, 11, 10, 0),
+                "body": """Here are the color values:
 # Background colors
 * Background: #1a1a1a
-* Text: #e0e0e0'''
-            }
-        ]
+* Text: #e0e0e0""",
+            },
+        ],
     }
 
     print(formatter.format_issue_from_dict(closed_issue))
