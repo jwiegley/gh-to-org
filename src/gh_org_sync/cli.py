@@ -23,6 +23,7 @@ from .exceptions import GitHubOrgSyncError
 from .gitea_client import GiteaClient
 from .github_client import GitHubClient
 from .models import MergeResult
+from .org_writer import OrgWriter
 from .provider import IssueProvider
 from .sync import IssueSync
 
@@ -71,9 +72,7 @@ def _create_provider(
     """Create the appropriate issue provider based on choice."""
     if provider_choice == ProviderChoice.GITEA:
         if not gitea_url:
-            raise typer.BadParameter(
-                "--gitea-url is required when using Gitea provider"
-            )
+            raise typer.BadParameter("--gitea-url is required when using Gitea provider")
         token = gitea_token or os.environ.get("GITEA_TOKEN", "")
         if not token:
             raise typer.BadParameter(
@@ -253,19 +252,20 @@ def sync(
     provider_name = provider.value.title()
     console.print(f"Syncing [bold]{repo}[/bold] from {provider_name} -> [bold]{output}[/bold]")
 
-    issue_provider: IssueProvider | None = None
-    try:
-        # Create the appropriate provider
-        issue_provider = _create_provider(provider, gitea_url, gitea_token, timeout)
+    async def run_sync_with_cleanup() -> MergeResult:
+        """Run sync operation and cleanup within the same event loop."""
+        issue_provider: IssueProvider | None = None
+        try:
+            # Create the appropriate provider
+            issue_provider = _create_provider(provider, gitea_url, gitea_token, timeout)
 
-        syncer = IssueSync(
-            provider=issue_provider,
-            timeout=timeout,
-            add_link_tag=not no_link_tag,
-        )
+            syncer = IssueSync(
+                provider=issue_provider,
+                timeout=timeout,
+                add_link_tag=not no_link_tag,
+            )
 
-        result = asyncio.run(
-            syncer.sync(
+            return await syncer.sync(
                 repo=repo,
                 output_file=output,
                 state_filter=state.value,
@@ -274,7 +274,13 @@ def sync(
                 dry_run=dry_run,
                 backup=not no_backup,
             )
-        )
+        finally:
+            # Close provider within the same event loop
+            if issue_provider is not None:
+                await issue_provider.close()
+
+    try:
+        result = asyncio.run(run_sync_with_cleanup())
 
         # Display results
         _display_result(result, dry_run)
@@ -290,10 +296,134 @@ def sync(
     except KeyboardInterrupt:
         error_console.print("\n[yellow]Interrupted[/yellow]")
         raise typer.Exit(130) from None
-    finally:
-        # Close provider if it has a close method
-        if issue_provider is not None:
-            asyncio.run(issue_provider.close())
+
+
+@app.command()
+def get(
+    repo: Annotated[
+        str,
+        typer.Argument(
+            help="Repository in owner/repo format",
+            show_default=False,
+        ),
+    ],
+    number: Annotated[
+        int,
+        typer.Argument(
+            help="Issue number to fetch",
+            show_default=False,
+        ),
+    ],
+    no_comments: Annotated[
+        bool,
+        typer.Option(
+            "--no-comments",
+            help="Don't include issue comments",
+        ),
+    ] = False,
+    no_link_tag: Annotated[
+        bool,
+        typer.Option(
+            "--no-link-tag",
+            help="Don't add :LINK: tag to heading",
+        ),
+    ] = False,
+    timeout: Annotated[
+        int,
+        typer.Option(
+            "--timeout",
+            help="API timeout in seconds",
+            min=10,
+            max=300,
+        ),
+    ] = 60,
+    provider: Annotated[
+        ProviderChoice,
+        typer.Option(
+            "-p",
+            "--provider",
+            help="Issue provider (github or gitea)",
+        ),
+    ] = ProviderChoice.GITHUB,
+    gitea_url: Annotated[
+        str | None,
+        typer.Option(
+            "--gitea-url",
+            help="Gitea server URL (e.g., https://gitea.example.com)",
+            envvar="GITEA_URL",
+        ),
+    ] = None,
+    gitea_token: Annotated[
+        str | None,
+        typer.Option(
+            "--gitea-token",
+            help="Gitea API token (or set GITEA_TOKEN env var)",
+            envvar="GITEA_TOKEN",
+        ),
+    ] = None,
+    verbose: Annotated[
+        bool,
+        typer.Option(
+            "-v",
+            "--verbose",
+            help="Enable verbose output",
+        ),
+    ] = False,
+    log_level: Annotated[
+        LogLevel,
+        typer.Option(
+            "--log-level",
+            help="Set log level",
+        ),
+    ] = LogLevel.INFO,
+) -> None:
+    """
+    Get a single issue and print its Org-mode entry.
+
+    This command fetches a single issue from a GitHub or Gitea repository
+    and prints the Org-mode formatted entry to standard output.
+
+    Examples:
+
+        gh-org-sync get owner/repo 42
+
+        gh-org-sync get owner/repo 123 --no-comments
+
+        gh-org-sync get owner/repo 1 --provider gitea --gitea-url https://gitea.example.com
+    """
+    setup_logging(log_level, verbose)
+
+    async def run_get_with_cleanup() -> str:
+        """Fetch issue and return formatted Org-mode text."""
+        issue_provider: IssueProvider | None = None
+        try:
+            issue_provider = _create_provider(provider, gitea_url, gitea_token, timeout)
+
+            issue = await issue_provider.fetch_issue(
+                repo=repo,
+                number=number,
+                include_comments=not no_comments,
+            )
+
+            writer = OrgWriter(add_link_tag=not no_link_tag)
+            return writer.format_issue_heading(issue)
+
+        finally:
+            if issue_provider is not None:
+                await issue_provider.close()
+
+    try:
+        org_text = asyncio.run(run_get_with_cleanup())
+        console.print(org_text)
+
+    except GitHubOrgSyncError as e:
+        error_console.print(f"[red]Error:[/red] {e.message}")
+        if e.hint:
+            error_console.print(f"[dim]Hint: {e.hint}[/dim]")
+        raise typer.Exit(1) from None
+    except KeyboardInterrupt:
+        error_console.print("\n[yellow]Interrupted[/yellow]")
+        raise typer.Exit(130) from None
 
 
 @app.command()
@@ -336,36 +466,40 @@ def check(
     setup_logging(LogLevel.INFO, verbose)
 
     provider_name = provider.value.title()
-    issue_provider: IssueProvider | None = None
 
-    with console.status(f"Checking {provider_name} connection..."):
+    async def run_check_with_cleanup() -> None:
+        """Run connection check and cleanup within the same event loop."""
+        issue_provider: IssueProvider | None = None
         try:
             if provider == ProviderChoice.GITHUB:
                 client = GitHubClient()
                 # Check gh CLI
-                asyncio.run(client.check_cli_available())
+                await client.check_cli_available()
                 console.print("[green]✓[/green] GitHub CLI (gh) is installed")
 
                 # Check authentication
-                asyncio.run(client.check_auth())
+                await client.check_auth()
                 console.print("[green]✓[/green] GitHub CLI is authenticated")
             else:
                 # Gitea
                 issue_provider = _create_provider(provider, gitea_url, gitea_token, 30)
-                asyncio.run(issue_provider.check_connection())
+                await issue_provider.check_connection()
                 console.print(f"[green]✓[/green] Connected to Gitea at {gitea_url}")
                 console.print("[green]✓[/green] Gitea authentication valid")
 
             console.print(f"\n[green]All {provider_name} checks passed![/green]")
+        finally:
+            if issue_provider is not None:
+                await issue_provider.close()
 
+    with console.status(f"Checking {provider_name} connection..."):
+        try:
+            asyncio.run(run_check_with_cleanup())
         except GitHubOrgSyncError as e:
             error_console.print(f"[red]✗[/red] {e.message}")
             if e.hint:
                 error_console.print(f"  [dim]Hint: {e.hint}[/dim]")
             raise typer.Exit(1) from None
-        finally:
-            if issue_provider is not None:
-                asyncio.run(issue_provider.close())
 
 
 @app.command()
