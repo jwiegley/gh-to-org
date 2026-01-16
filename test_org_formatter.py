@@ -108,12 +108,14 @@ Another normal line"""
         self.assertEqual(result, '')
 
     def test_format_properties_basic(self):
-        """Test basic properties formatting."""
+        """Test basic properties formatting with target column alignment."""
         props = {'URL': 'https://example.com', 'ID': 123}
         result = OrgFormatter.format_properties(props)
+        # Target column is 11, so :ID: (4 chars) gets 7 spaces, :URL: (5 chars) gets 6 spaces
+        # Properties are output in dictionary order (insertion order in Python 3.7+)
         expected = """  :PROPERTIES:
-  :URL: https://example.com
-  :ID:  123
+  :URL:      https://example.com
+  :ID:       123
   :END:"""
         self.assertEqual(result, expected)
 
@@ -147,9 +149,10 @@ Another normal line"""
         self.assertIn('* TODO Test Issue', result)
         self.assertIn(':LINK:bug:', result)
         self.assertIn(':PROPERTIES:', result)
-        self.assertIn(':URL:       https://github.com/user/repo/issues/123', result)
-        self.assertIn(':ID:        123', result)
-        self.assertIn(':STATE:     open', result)
+        # Alignment uses target column 11: :URL: (5) + 6 spaces, :ID: (4) + 7 spaces, :STATE: (7) + 4 spaces
+        self.assertIn(':URL:      https://github.com/user/repo/issues/123', result)
+        self.assertIn(':ID:       123', result)
+        self.assertIn(':STATE:    open', result)
 
     def test_format_issue_closed(self):
         """Test closed issue formatting."""
@@ -216,7 +219,8 @@ It has multiple paragraphs.
         self.assertIn('First comment', result)
         self.assertIn('** Comment by @user2 [2024-01-15 Mon 11:00]', result)
         self.assertIn('Second comment', result)
-        self.assertIn(':COMMENTS:  2', result)
+        # :COMMENTS: (10 chars) >= 11, so just 1 space padding
+        self.assertIn(':COMMENTS: 2', result)
 
     def test_format_issue_hierarchical_level(self):
         """Test issue formatting with different heading levels."""

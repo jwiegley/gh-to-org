@@ -7,9 +7,9 @@ into proper Org-mode syntax, handling all special characters, escaping,
 and structural requirements.
 """
 
-from datetime import datetime
-from typing import List, Dict, Optional, Any
 import re
+from datetime import datetime
+from typing import Any
 
 
 class OrgFormatter:
@@ -91,11 +91,7 @@ class OrgFormatter:
             # Check for special line-start characters
             needs_escape = False
 
-            if stripped.startswith("*"):
-                needs_escape = True
-            elif stripped.startswith("#"):
-                needs_escape = True
-            elif stripped.startswith("#+"):
+            if stripped.startswith("*") or stripped.startswith("#") or stripped.startswith("#+"):
                 needs_escape = True
             elif stripped.startswith(":"):
                 # Check if it looks like a property or drawer
@@ -128,7 +124,7 @@ class OrgFormatter:
         return "\n".join(escaped_lines)
 
     @staticmethod
-    def format_tags(tags: List[str], include_link: bool = True) -> str:
+    def format_tags(tags: list[str], include_link: bool = True) -> str:
         """
         Format tags for Org-mode heading.
 
@@ -170,13 +166,17 @@ class OrgFormatter:
         return ":" + ":".join(all_tags) + ":"
 
     @staticmethod
-    def format_properties(properties: Dict[str, Any], indent: str = "  ") -> str:
+    def format_properties(
+        properties: dict[str, Any], indent: str = "  ", target_column: int = 11
+    ) -> str:
         """
         Format properties as Org-mode PROPERTIES drawer.
 
         Args:
             properties: Dictionary of property name -> value
             indent: Indentation string (default: 2 spaces)
+            target_column: Column at which values should start (1-indexed).
+                           Properties longer than this get a single space.
 
         Returns:
             Formatted properties drawer
@@ -185,17 +185,14 @@ class OrgFormatter:
             >>> props = {'URL': 'https://example.com', 'ID': 123}
             >>> print(OrgFormatter.format_properties(props))
               :PROPERTIES:
-              :URL:       https://example.com
-              :ID:        123
+              :ID:     123
+              :URL:    https://example.com
               :END:
         """
         if not properties:
             return ""
 
         lines = [f"{indent}:PROPERTIES:"]
-
-        # Find longest property name for alignment
-        max_len = max(len(str(k)) for k in properties.keys()) if properties else 0
 
         for key, value in properties.items():
             # Convert value to string, handle None
@@ -209,10 +206,16 @@ class OrgFormatter:
             # Property names should be uppercase
             key_upper = str(key).upper()
 
-            # Format with alignment
+            # Format with alignment to target column
             # Only add padding space if there's a value
             if value_str:
-                padding = " " * (max_len - len(key_upper) + 1)
+                # Property prefix is ":NAME:" which is len(NAME) + 2
+                prop_prefix_len = len(key_upper) + 2
+                # If prefix >= target column, use 1 space; otherwise pad to target column
+                if prop_prefix_len >= target_column:
+                    padding = " "
+                else:
+                    padding = " " * (target_column - prop_prefix_len)
                 lines.append(f"{indent}:{key_upper}:{padding}{value_str}")
             else:
                 lines.append(f"{indent}:{key_upper}:")
@@ -227,15 +230,15 @@ class OrgFormatter:
         number: int,
         state: str,
         url: str,
-        created_at: Optional[datetime] = None,
-        updated_at: Optional[datetime] = None,
-        closed_at: Optional[datetime] = None,
+        created_at: datetime | None = None,
+        updated_at: datetime | None = None,
+        closed_at: datetime | None = None,
         author: str = "",
         assignee: str = "",
-        labels: Optional[List[str]] = None,
+        labels: list[str] | None = None,
         milestone: str = "",
         body: str = "",
-        comments: Optional[List[Dict[str, Any]]] = None,
+        comments: list[dict[str, Any]] | None = None,
         level: int = 1,
     ) -> str:
         """
@@ -322,7 +325,7 @@ class OrgFormatter:
 
         return heading + properties_text + "\n" + closed_line + body_text + comments_text
 
-    def format_issue_from_dict(self, issue: Dict[str, Any], level: int = 1) -> str:
+    def format_issue_from_dict(self, issue: dict[str, Any], level: int = 1) -> str:
         """
         Convenience method to format issue from dictionary.
 
@@ -363,7 +366,7 @@ class OrgFormatter:
 
 
 def format_org_file_header(
-    title: str, description: str = "", author: str = "", startup_options: Optional[List[str]] = None
+    title: str, description: str = "", author: str = "", startup_options: list[str] | None = None
 ) -> str:
     """
     Format Org-mode file header with metadata.

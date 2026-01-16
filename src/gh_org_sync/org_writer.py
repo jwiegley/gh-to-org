@@ -181,9 +181,7 @@ def escape_org_content(text: str) -> str:
             # Check if it looks like a property :NAME:
             colon_pos = stripped.index(":", 1)
             potential_keyword = stripped[1:colon_pos]
-            if potential_keyword and re.match(
-                r"^[A-Za-z_][A-Za-z0-9_-]*$", potential_keyword
-            ):
+            if potential_keyword and re.match(r"^[A-Za-z_][A-Za-z0-9_-]*$", potential_keyword):
                 needs_escape = True
 
         if needs_escape:
@@ -243,6 +241,7 @@ def format_tags(tags: list[str], include_link: bool = True) -> str:
 def format_properties(
     properties: Mapping[str, str | int | datetime | None],
     indent: str = "",
+    target_column: int = 11,
 ) -> str:
     """
     Format properties as Org-mode PROPERTIES drawer.
@@ -250,6 +249,8 @@ def format_properties(
     Args:
         properties: Dictionary of property name -> value
         indent: Indentation for each line
+        target_column: Column at which values should start (1-indexed).
+                       Properties longer than this get a single space.
 
     Returns:
         Formatted properties drawer
@@ -259,22 +260,24 @@ def format_properties(
 
     lines = [f"{indent}:PROPERTIES:"]
 
-    # Filter out None values and find max key length
-    valid_props = {
-        k: v for k, v in properties.items() if v is not None and str(v).strip()
-    }
+    # Filter out None values
+    valid_props = {k: v for k, v in properties.items() if v is not None and str(v).strip()}
 
     if not valid_props:
         return ""
-
-    max_len = max(len(str(k)) for k in valid_props)
 
     for key, value in sorted(valid_props.items()):
         # Format value based on type (use Org-mode timestamp for datetime)
         value_str = format_timestamp(value) if isinstance(value, datetime) else str(value)
 
         key_upper = str(key).upper()
-        padding = " " * (max_len - len(key_upper) + 1)
+        # Property prefix is ":NAME:" which is len(NAME) + 2
+        prop_prefix_len = len(key_upper) + 2
+        # If prefix >= target column, use 1 space; otherwise pad to target column
+        if prop_prefix_len >= target_column:
+            padding = " "
+        else:
+            padding = " " * (target_column - prop_prefix_len)
         lines.append(f"{indent}:{key_upper}:{padding}{value_str}")
 
     lines.append(f"{indent}:END:")
