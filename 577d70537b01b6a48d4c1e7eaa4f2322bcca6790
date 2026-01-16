@@ -1,0 +1,27 @@
+src/gh_org_sync/org_writer.py
+  20ea0c743c186094 244,252-253,274-280
+org_formatter.py
+  20ea0c743c186094 178-179,188-189,209,212-218
+test_org_formatter.py
+  20ea0c743c186094 111,114-115,117-118,152-155,222-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.0.35",
+  "base_commit_sha": "577d70537b01b6a48d4c1e7eaa4f2322bcca6790",
+  "prompts": {
+    "20ea0c743c186094": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "49e7f74b-2e71-4a0b-b56f-0da748447b46",
+        "model": "claude-opus-4-5-20251101"
+      },
+      "human_author": "John Wiegley <johnw@newartisans.com>",
+      "messages": [],
+      "total_additions": 55,
+      "total_deletions": 37,
+      "accepted_lines": 41,
+      "overriden_lines": 0
+    }
+  }
+}
