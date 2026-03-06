@@ -19,7 +19,7 @@
           });
         };
 
-        python = pkgs.python311.override {
+        python = pkgs.python3.override {
           packageOverrides = pythonOverrides;
         };
 
