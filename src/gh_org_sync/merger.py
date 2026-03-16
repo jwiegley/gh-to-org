@@ -106,9 +106,7 @@ class OrgMerger:
         )
 
         # Build index of GitHub issues by number for efficient lookup
-        issue_index: dict[int, GitHubIssue] = {
-            issue.number: issue for issue in github_issues
-        }
+        issue_index: dict[int, GitHubIssue] = {issue.number: issue for issue in github_issues}
 
         # Track which GitHub issues have been processed
         processed_issue_numbers: set[int] = set()
@@ -148,8 +146,7 @@ class OrgMerger:
         # Append new issues that weren't in the existing file
         # Sort new issues by number for consistent ordering of additions
         new_issues = [
-            issue for issue in github_issues
-            if issue.number not in processed_issue_numbers
+            issue for issue in github_issues if issue.number not in processed_issue_numbers
         ]
         for issue in sorted(new_issues, key=lambda i: i.number):
             new_heading = self._issue_to_heading(issue)
@@ -348,11 +345,13 @@ class OrgMerger:
                 comment_content = ""
                 if comment.body:
                     comment_content = escape_org_content(comment.body.strip())
-                children.append(OrgHeading(
-                    level=existing.level + 1,
-                    title=f"Comment by @{author} {timestamp}",
-                    content=comment_content,
-                ))
+                children.append(
+                    OrgHeading(
+                        level=existing.level + 1,
+                        title=f"Comment by @{author} {timestamp}",
+                        content=comment_content,
+                    )
+                )
 
         # Preserve user-added children (not comments)
         for child in existing.children:
@@ -403,11 +402,13 @@ class OrgMerger:
                 comment_content = ""
                 if comment.body:
                     comment_content = escape_org_content(comment.body.strip())
-                children.append(OrgHeading(
-                    level=level + 1,
-                    title=f"Comment by @{author} {timestamp}",
-                    content=comment_content,
-                ))
+                children.append(
+                    OrgHeading(
+                        level=level + 1,
+                        title=f"Comment by @{author} {timestamp}",
+                        content=comment_content,
+                    )
+                )
 
         return OrgHeading(
             level=level,

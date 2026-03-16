@@ -1,0 +1,21 @@
+pre-commit:
+  parallel: true
+  commands:
+    ruff-format:
+      glob: "*.py"
+      run: nix develop --command ruff format --check {staged_files}
+    ruff-lint:
+      glob: "*.py"
+      run: nix develop --command ruff check {staged_files}
+    mypy:
+      glob: "*.py"
+      run: nix develop --command bash -c "PYTHONPATH=src mypy src/"
+    pytest:
+      glob: "*.{py,toml}"
+      run: nix develop --command bash -c "PYTHONPATH=src pytest tests/ -x -q"
+    coverage:
+      glob: "*.{py,toml}"
+      run: nix develop --command bash -c "PYTHONPATH=src pytest tests/ -q --cov=gh_org_sync --cov-report=term-missing --cov-fail-under=35"
+    nix-check:
+      glob: "*.{py,nix,toml,yaml}"
+      run: nix flake check --no-warn-dirty 2>&1

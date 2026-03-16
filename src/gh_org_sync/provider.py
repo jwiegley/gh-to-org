@@ -6,12 +6,12 @@ allowing them to be used interchangeably by the sync orchestrator.
 """
 
 from abc import ABC, abstractmethod
-from enum import Enum
+from enum import StrEnum
 
 from .models import GitHubIssue
 
 
-class ProviderType(str, Enum):
+class ProviderType(StrEnum):
     """Supported issue provider types."""
 
     GITHUB = "github"

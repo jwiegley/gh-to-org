@@ -3,7 +3,7 @@ name = "gh-org-sync"
 version = "1.0.0"
 description = "Sync GitHub issues to Org-mode files with bidirectional awareness"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "BSD-3-Clause"}
 requires-python = ">=3.11"
 authors = [
     {name = "GitHub Issues to Org"},
@@ -13,7 +13,7 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: OSI Approved :: BSD License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -34,6 +34,9 @@ dependencies = [
 dev = [
     "pytest>=8.0.0",
     "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.1.0",
+    "pytest-benchmark>=4.0.0",
+    "hypothesis>=6.92.0",
     "mypy>=1.8.0",
     "ruff>=0.2.0",
 ]
@@ -56,6 +59,11 @@ target-version = "py311"
 select = ["E", "F", "I", "N", "UP", "S", "B", "C4", "DTZ", "T10", "ISC", "PIE", "Q", "RSE", "RET", "SIM", "TID", "TCH", "ARG", "PTH", "ERA"]
 ignore = ["S603", "S607"]  # Allow subprocess calls (needed for gh CLI)
 
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["S101", "DTZ001"]
+"test_*.py" = ["S101", "DTZ001"]
+"conftest.py" = ["S101", "DTZ001"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
@@ -66,3 +74,19 @@ disallow_untyped_defs = true
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["gh_org_sync"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 35
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.",
+]
+
+[tool.pytest.ini_options.markers]
+benchmark = "Performance benchmarks"

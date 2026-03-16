@@ -9,8 +9,6 @@ from gh_org_sync.models import (
     Comment,
     GitHubIssue,
     IssueState,
-    Label,
-    MergeAction,
     OrgHeading,
     OrgTodoState,
     User,
@@ -50,7 +48,9 @@ class TestOrgMerger:
                 "GITHUB_STATE": "open",
                 "GITHUB_UPDATED": "2024-01-14T10:00:00",
             },
-            content="Old body content.\n\n# --- End of GitHub synced content ---\n\nUser notes here.",
+            content=(
+                "Old body content.\n\n# --- End of GitHub synced content ---\n\nUser notes here."
+            ),
         )
 
     def test_merge_adds_new_issue(

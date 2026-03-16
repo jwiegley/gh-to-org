@@ -8,7 +8,7 @@ and structural requirements.
 """
 
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 
@@ -91,19 +91,16 @@ class OrgFormatter:
             # Check for special line-start characters
             needs_escape = False
 
-            if stripped.startswith("*") or stripped.startswith("#") or stripped.startswith("#+"):
+            if stripped.startswith(("*", "#", "#+")):
                 needs_escape = True
-            elif stripped.startswith(":"):
+            elif stripped.startswith(":") and ":" in stripped[1:]:
                 # Check if it looks like a property or drawer
                 # Format: :WORD: or :WORD:WORD:
-                if ":" in stripped[1:]:
-                    colon_pos = stripped.index(":", 1)
-                    potential_keyword = stripped[1:colon_pos]
-                    # If it's alphanumeric/underscore, it's likely a property
-                    if potential_keyword and re.match(
-                        r"^[A-Za-z_][A-Za-z0-9_-]*$", potential_keyword
-                    ):
-                        needs_escape = True
+                colon_pos = stripped.index(":", 1)
+                potential_keyword = stripped[1:colon_pos]
+                # If it's alphanumeric/underscore, it's likely a property
+                if potential_keyword and re.match(r"^[A-Za-z_][A-Za-z0-9_-]*$", potential_keyword):
+                    needs_escape = True
 
             if needs_escape:
                 line = indent + ", " + stripped
@@ -415,8 +412,8 @@ if __name__ == "__main__":
         "number": 123,
         "state": "open",
         "url": "https://github.com/myorg/myrepo/issues/123",
-        "created_at": datetime(2024, 1, 15, 10, 30),
-        "updated_at": datetime(2024, 1, 16, 14, 20),
+        "created_at": datetime(2024, 1, 15, 10, 30, tzinfo=UTC),
+        "updated_at": datetime(2024, 1, 16, 14, 20, tzinfo=UTC),
         "closed_at": None,
         "author": "johndoe",
         "assignee": "janedeveloper",
@@ -433,12 +430,12 @@ Expected: User should be logged in successfully.""",
         "comments": [
             {
                 "author": "johndoe",
-                "created_at": datetime(2024, 1, 15, 10, 30),
+                "created_at": datetime(2024, 1, 15, 10, 30, tzinfo=UTC),
                 "body": "Initial report from user feedback.",
             },
             {
                 "author": "janedeveloper",
-                "created_at": datetime(2024, 1, 15, 16, 45),
+                "created_at": datetime(2024, 1, 15, 16, 45, tzinfo=UTC),
                 "body": """Investigating. Appears to be related to OAuth token refresh.
 
 * Found issue in token_manager.py line 234
@@ -460,9 +457,9 @@ Code snippet shows the problem.""",
         "number": 124,
         "state": "closed",
         "url": "https://github.com/myorg/myrepo/issues/124",
-        "created_at": datetime(2024, 1, 10, 9, 0),
-        "updated_at": datetime(2024, 1, 14, 18, 30),
-        "closed_at": datetime(2024, 1, 14, 18, 30),
+        "created_at": datetime(2024, 1, 10, 9, 0, tzinfo=UTC),
+        "updated_at": datetime(2024, 1, 14, 18, 30, tzinfo=UTC),
+        "closed_at": datetime(2024, 1, 14, 18, 30, tzinfo=UTC),
         "author": "designuser",
         "assignee": "frontenddev",
         "labels": ["enhancement", "ui"],
@@ -471,12 +468,12 @@ Code snippet shows the problem.""",
         "comments": [
             {
                 "author": "frontenddev",
-                "created_at": datetime(2024, 1, 10, 11, 0),
+                "created_at": datetime(2024, 1, 10, 11, 0, tzinfo=UTC),
                 "body": "Working on this. Will use CSS custom properties.",
             },
             {
                 "author": "designuser",
-                "created_at": datetime(2024, 1, 11, 10, 0),
+                "created_at": datetime(2024, 1, 11, 10, 0, tzinfo=UTC),
                 "body": """Here are the color values:
 # Background colors
 * Background: #1a1a1a

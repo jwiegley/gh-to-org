@@ -1,10 +1,5 @@
 """Tests for Pydantic models."""
 
-from datetime import datetime
-
-import pytest
-from pydantic import ValidationError
-
 from gh_org_sync.models import (
     GitHubIssue,
     IssueState,
@@ -12,7 +7,6 @@ from gh_org_sync.models import (
     MergeAction,
     MergeResult,
     OrgHeading,
-    OrgTodoState,
     User,
 )
 

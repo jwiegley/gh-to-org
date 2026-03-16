@@ -6,12 +6,12 @@ providing strong typing, validation, and serialization capabilities.
 """
 
 from datetime import datetime
-from enum import Enum
+from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
 
-class IssueState(str, Enum):
+class IssueState(StrEnum):
     """GitHub issue state."""
 
     OPEN = "open"
@@ -97,7 +97,7 @@ class GitHubIssue(BaseModel):
         return [a.login for a in self.assignees]
 
 
-class OrgTodoState(str, Enum):
+class OrgTodoState(StrEnum):
     """Org-mode TODO states."""
 
     TODO = "TODO"
@@ -141,6 +141,7 @@ class OrgHeading(BaseModel):
     def github_updated(self) -> datetime | None:
         """Get GitHub updated timestamp from properties if present."""
         import re
+
         updated_str = self.properties.get("GITHUB_UPDATED")
         if updated_str:
             try:
@@ -149,8 +150,7 @@ class OrgHeading(BaseModel):
             except ValueError:
                 # Try Org-mode format: [2024-11-01 Fri 16:12]
                 match = re.match(
-                    r"[\[<](\d{4}-\d{2}-\d{2})\s+\w+\s+(\d{2}:\d{2})[\]>]",
-                    updated_str
+                    r"[\[<](\d{4}-\d{2}-\d{2})\s+\w+\s+(\d{2}:\d{2})[\]>]", updated_str
                 )
                 if match:
                     date_part, time_part = match.groups()
@@ -176,7 +176,7 @@ class OrgHeading(BaseModel):
         return tag.upper() in [t.upper() for t in self.tags]
 
 
-class MergeAction(str, Enum):
+class MergeAction(StrEnum):
     """Type of merge action taken."""
 
     ADDED = "added"

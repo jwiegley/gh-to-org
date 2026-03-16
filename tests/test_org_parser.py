@@ -3,8 +3,6 @@
 import tempfile
 from pathlib import Path
 
-import pytest
-
 from gh_org_sync.models import OrgTodoState
 from gh_org_sync.org_parser import (
     OrgParser,

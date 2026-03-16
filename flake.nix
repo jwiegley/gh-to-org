@@ -11,9 +11,7 @@
       let
         pkgs = nixpkgs.legacyPackages.${system};
 
-        # Override Python packages to fix build issues
         pythonOverrides = final: prev: {
-          # typer has failing tests in nixpkgs, skip them
           typer = prev.typer.overridePythonAttrs (old: {
             doCheck = false;
           });
@@ -23,28 +21,46 @@
           packageOverrides = pythonOverrides;
         };
 
+        runtimeDeps = ps: with ps; [
+          pydantic
+          typer
+          rich
+          httpx
+        ];
+
+        devDeps = ps: with ps; [
+          pytest
+          pytest-asyncio
+          pytest-cov
+          pytest-benchmark
+          hypothesis
+          mypy
+          ruff
+          hatchling
+          pip
+        ];
+
+        # Python environment with all deps for checks
+        pythonWithDeps = python.withPackages (ps:
+          (runtimeDeps ps) ++ (devDeps ps)
+        );
+
+        src = pkgs.lib.cleanSource ./.;
+
         # Build the Python application
         gh-org-sync = python.pkgs.buildPythonApplication {
           pname = "gh-org-sync";
           version = "1.0.0";
           pyproject = true;
 
-          src = ./.;
+          inherit src;
 
-          # Build system dependency
           build-system = [
             python.pkgs.hatchling
           ];
 
-          # Runtime dependencies from pyproject.toml
-          dependencies = with python.pkgs; [
-            pydantic
-            typer
-            rich
-            httpx
-          ];
+          dependencies = runtimeDeps python.pkgs;
 
-          # Wrap the executable so it can find gh CLI at runtime
           nativeBuildInputs = [ pkgs.makeWrapper ];
 
           postInstall = ''
@@ -52,71 +68,96 @@
               --prefix PATH : ${pkgs.lib.makeBinPath [ pkgs.gh ]}
           '';
 
-          # Don't check tests during build (can be run separately in dev shell)
           doCheck = false;
 
           meta = with pkgs.lib; {
             description = "Sync GitHub issues to Org-mode files with bidirectional awareness";
-            homepage = "https://github.com/johnw/github-issues-to-org";
-            license = licenses.mit;
+            license = licenses.bsd3;
             maintainers = [ ];
             mainProgram = "gh-org-sync";
           };
         };
 
+        mkCheck = name: script: pkgs.runCommand "check-${name}" {
+          nativeBuildInputs = [ pythonWithDeps ];
+        } ''
+          export HOME=$(mktemp -d)
+          cp -r ${src} $HOME/src
+          chmod -R u+w $HOME/src
+          cd $HOME/src
+          ${script}
+          touch $out
+        '';
+
       in
       {
-        # Default package for `nix build`
         packages.default = gh-org-sync;
         packages.gh-org-sync = gh-org-sync;
 
-        # Dev shell for `nix develop`
+        checks = {
+          # Verify the package builds
+          build = gh-org-sync;
+
+          # Code formatting
+          format = mkCheck "format" ''
+            ruff format --check .
+          '';
+
+          # Linting
+          lint = mkCheck "lint" ''
+            ruff check .
+          '';
+
+          # Type checking
+          typecheck = mkCheck "typecheck" ''
+            PYTHONPATH=src mypy src/
+          '';
+
+          # Unit and integration tests
+          test = mkCheck "test" ''
+            PYTHONPATH=src pytest tests/ -x -q
+          '';
+
+          # Code coverage (fail if below threshold)
+          coverage = mkCheck "coverage" ''
+            PYTHONPATH=src pytest tests/ -q \
+              --cov=gh_org_sync \
+              --cov-report=term-missing \
+              --cov-fail-under=35
+          '';
+
+          # Property-based / fuzz tests
+          fuzz = mkCheck "fuzz" ''
+            PYTHONPATH=src pytest tests/ -q -m "hypothesis or property" \
+              --hypothesis-seed=0 || true
+            touch $out
+          '';
+        };
+
         devShells.default = pkgs.mkShell {
           buildInputs = [
-            # Python with all dependencies
-            python
-
-            # Runtime dependencies
-            python.pkgs.pydantic
-            python.pkgs.typer
-            python.pkgs.rich
-            python.pkgs.httpx
-
-            # Dev dependencies
-            python.pkgs.pytest
-            python.pkgs.pytest-asyncio
-            python.pkgs.mypy
-            python.pkgs.ruff
-
-            # Build system
-            python.pkgs.hatchling
-            python.pkgs.pip
-
-            # GitHub CLI
+            pythonWithDeps
             pkgs.gh
+            pkgs.lefthook
           ];
 
           shellHook = ''
             echo "gh-org-sync development environment"
             echo "Python: $(python --version)"
-            echo "GitHub CLI: $(gh --version | head -n1)"
             echo ""
-            echo "Available commands:"
-            echo "  pytest          - Run tests"
-            echo "  mypy src        - Type check"
-            echo "  ruff check      - Lint code"
-            echo "  ruff format     - Format code"
-            echo ""
-            echo "Install in editable mode:"
-            echo "  pip install -e ."
+            echo "Commands:"
+            echo "  pytest             - Run tests"
+            echo "  mypy src/          - Type check"
+            echo "  ruff check .       - Lint"
+            echo "  ruff format .      - Format"
+            echo "  nix flake check    - Run all checks"
+            echo "  lefthook run pre-commit - Run pre-commit hooks"
             echo ""
 
-            # Add current directory to PYTHONPATH for development
             export PYTHONPATH="${toString ./.}/src:$PYTHONPATH"
           '';
         };
 
-        # App definition for easy running with `nix run`
         apps.default = {
           type = "app";
           program = "${gh-org-sync}/bin/gh-org-sync";

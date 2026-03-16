@@ -1,1 +1,45 @@
 __pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Type checking / lint caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+
+# Coverage
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Benchmarks
+.benchmarks/
+
+# Nix
+result
+result-*
+
+# direnv
+.envrc.cache
+.direnv/
+
+# OS
+.DS_Store
+Thumbs.db

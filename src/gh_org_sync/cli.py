@@ -8,7 +8,7 @@ to Org-mode files.
 import asyncio
 import logging
 import os
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 from typing import Annotated
 
@@ -39,7 +39,7 @@ console = Console()
 error_console = Console(stderr=True)
 
 
-class StateFilter(str, Enum):
+class StateFilter(StrEnum):
     """Issue state filter options."""
 
     ALL = "all"
@@ -47,14 +47,14 @@ class StateFilter(str, Enum):
     CLOSED = "closed"
 
 
-class ProviderChoice(str, Enum):
+class ProviderChoice(StrEnum):
     """Issue provider options."""
 
     GITHUB = "github"
     GITEA = "gitea"
 
 
-class LogLevel(str, Enum):
+class LogLevel(StrEnum):
     """Log level options."""
 
     DEBUG = "debug"
